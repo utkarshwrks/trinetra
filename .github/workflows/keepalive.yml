@@ -1,0 +1,282 @@
+# Keep-alive for the free Render services (DEC-064, DEC-065, DEC-075).
+#
+# WHY THIS IS NOT A `*/5` CRON ANY MORE.
+#
+# It was one, and it did not work. Measured on this repo over 2026-09-03..04
+# the schedule asked for ~120 runs a day and GitHub delivered FOUR IN TWO DAYS:
+# 07:39, 12:15, 16:29 on the 3rd and 07:37 on the 4th. GitHub documents
+# `schedule` as best-effort and drops high-frequency crons under load. Against
+# Render's fifteen-minute idle timer, a ping every four to nine hours keeps
+# nothing awake -- the services slept through their own warm window, and what a
+# user saw was the project being down.
+#
+# So the trigger is no longer the thing that has to be frequent. ONE run holds a
+# single job for a 5.5-hour SEGMENT, ticking every five minutes from inside it,
+# and then dispatches its own successor. The chain needs the scheduler to work
+# ONCE, not a hundred and twenty times a day. `workflow_dispatch` fired with
+# GITHUB_TOKEN is one of the two events GitHub permits to start a new run, so
+# the chain sustains itself; the hourly cron below is only a way back in if a
+# link ever breaks.
+#
+# This is affordable because the repo is PUBLIC: standard runners are free and
+# unmetered there, so the runner's wall clock costs nothing.
+#
+# VERIFIED RENDER FIGURES, from Render's live documentation on 2026-09-03:
+#   * 750 free instance hours per WORKSPACE per calendar month, SHARED across
+#     every free service -- not granted per service.
+#   * A free web service spins down after 15 minutes without inbound traffic.
+#   * Spin-up takes about one minute.
+#   * Hours are consumed only while running; a spun-down service consumes none.
+#
+# THE ARITHMETIC THOSE FIGURES FORCE.
+#
+# Budget is consumed by HOURS AWAKE, not by requests, so the tick interval is
+# free. What costs budget is how long the window is and how many services share
+# the pool:
+#
+#   3 services (engine + web + v1):  750 x 0.85 / 3 / 30.44 =  6.98 h/day each
+#   2 services (engine + web):       750 x 0.85 / 2 / 30.44 = 10.47 h/day each
+#
+# v1 is a separate demo that nobody is mid-investigation on, so it is OPT-IN
+# (PING_V1=0). That buys engine and web a TEN-HOUR window instead of seven.
+#
+# The window is 03:00-13:00 UTC = 08:30-18:30 IST: a full Indian working day,
+# and it is sized to land just under the 10.47 h/day the pool allows.
+#
+# WHAT IS STILL IMPOSSIBLE, stated plainly: two services awake 24/7 need
+# 2 x 730 = 1,460 hours against a pool of 750. There is no schedule that keeps
+# both up around the clock on the free tier. Ten hours a day is the most the
+# arithmetic allows -- and outside it the UI says a cold start is coming rather
+# than pretending otherwise. Moving the Next.js frontend to a host that does not
+# sleep would leave the whole pool to the engine (~20 h/day); that is the only
+# real way past this, and it is a deployment change, not a schedule change.
+
+name: keepalive
+
+on:
+  schedule:
+    # A WAY BACK IN, not the mechanism. The chain below is what keeps the
+    # services warm; these only have to land occasionally to start or restart
+    # it. Both are low-frequency, which is the kind GitHub actually delivers --
+    # the */5 this replaced was dropped roughly 97% of the time.
+    #
+    # 02:50 UTC opens the day: it lands inside the 30-minute lead, so the runner
+    # engages, sleeps to 03:00 and starts ticking exactly on the window.
+    - cron: "50 2 * * *"
+    # Twice an hour, to recover a chain that broke. MEASURED, not assumed:
+    # GitHub dropped the 09:09 slot on the day this was written, so a single
+    # daily opener is not enough on its own -- each of these is an independent
+    # chance to re-ignite, and out-of-window ones exit in seconds and cost
+    # nothing. Off the hour on purpose: :00 is GitHub's most congested slot.
+    - cron: "9,39 * * * *"
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: "Report what would be pinged, without pinging"
+        type: boolean
+        default: false
+      chain:
+        description: "Dispatch a successor segment when this one ends"
+        type: boolean
+        default: true
+
+concurrency:
+  # Never two runners pinging at once -- they would double-count against the
+  # budget artifact and race on the commit. `cancel-in-progress: false` keeps
+  # the live segment running and parks at most one successor behind it, which
+  # is precisely the chain we want: the queued run starts the moment this one
+  # ends.
+  group: keepalive
+  cancel-in-progress: false
+
+permissions:
+  contents: write   # to commit the budget artifact
+  issues: write     # to raise one when a target fails repeatedly
+  actions: write    # to dispatch the next segment
+
+env:
+  WINDOW_START: "3"
+  WINDOW_END: "13"
+  FREE_HOURS_POOL: "750"
+  # Services sharing the pool that this workflow keeps warm. Must match the
+  # PING_* flags below.
+  KEPT_WARM: "2"
+  PING_ENGINE: "1"
+  PING_WEB: "1"
+  # OPT-IN. v1 is a separate demo; keeping it warm would take the window from
+  # ten hours to seven for the two services that matter. Set to "1" and change
+  # KEPT_WARM to 3 if v1 must stay warm too.
+  PING_V1: "0"
+  # 5.5 h. The job timeout below is GitHub's 6 h ceiling minus slack for the
+  # settle, commit and chain steps, and the segment must finish inside it.
+  SEGMENT_MINUTES: "330"
+  # How early a run may engage before the window opens, so it can sleep to the
+  # opening and start ticking on it rather than minutes late.
+  LEAD_SECONDS: "1800"
+  TICK_SECONDS: "300"
+  ENGINE_URL: "https://trinetra-v2-engine.onrender.com"
+  WEB_URL: "https://trinetra-v2-web.onrender.com"
+  V1_URL: "https://trinetra-6njh.onrender.com"
+
+jobs:
+  keepalive:
+    runs-on: ubuntu-latest
+    # GitHub kills a job at 6 h. Stopping at 5 h 50 leaves the settle, commit
+    # and chain steps room to run -- a segment killed by the timeout leaves its
+    # budget reservation unsettled (safe, it overstates) but breaks the chain.
+    timeout-minutes: 350
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # The runner commits the budget artifact at the end of the segment,
+          # and the default token needs the ref to push back to.
+          ref: ${{ github.ref_name }}
+
+      - name: Decide whether to engage at all
+        id: plan
+        # Cheap, and it runs before anything is dispatched or reserved. A run
+        # that lands outside the window (the hourly cron will, most of the time)
+        # stops here in a few seconds instead of holding a runner idle for five
+        # and a half hours.
+        run: |
+          python3 scripts/keepalive_budget.py \
+            --state .github/keepalive-budget.json \
+            --pool "$FREE_HOURS_POOL" --services "$KEPT_WARM" \
+            --window-start "$WINDOW_START" --window-end "$WINDOW_END" \
+            --lead-seconds "$LEAD_SECONDS" | tee -a "$GITHUB_OUTPUT"
+
+      - name: Chain the next segment
+        # UP FRONT, not last, and `if: always()` would not be enough: if this
+        # job is cancelled or hits the 350-minute timeout, no later step runs at
+        # all and the chain would die silently. Dispatching before the segment
+        # means the successor is already parked behind this run's concurrency
+        # group before anything can go wrong. It cannot start early -- the group
+        # holds it until this segment ends.
+        if: steps.plan.outputs.engage == 'true' && github.event.inputs.chain != 'false'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          code=$(curl -sS -o /tmp/dispatch.json -w '%{http_code}' -X POST \
+            -H "Authorization: Bearer $GH_TOKEN" \
+            -H "Accept: application/vnd.github+json" \
+            -H "X-GitHub-Api-Version: 2022-11-28" \
+            "https://api.github.com/repos/${{ github.repository }}/actions/workflows/keepalive.yml/dispatches" \
+            -d '{"ref":"${{ github.ref_name }}","inputs":{"dry_run":"false","chain":"true"}}')
+          if [ "$code" = "204" ]; then
+            echo "successor dispatched; it is queued behind this segment"
+          else
+            echo "::warning::could not dispatch a successor (HTTP $code) — the hourly cron is the fallback"
+            cat /tmp/dispatch.json || true
+          fi
+
+      - name: Reserve this segment's budget, and push the claim
+        id: reserve
+        if: steps.plan.outputs.engage == 'true'
+        # BEFORE the segment, and pushed immediately. A runner reclaimed
+        # mid-segment must leave an unsettled -- therefore OVERSTATED -- claim
+        # behind it. Reserving inside the runner and committing only at the end
+        # would lose the claim in exactly the case it exists for.
+        run: |
+          python3 scripts/keepalive_budget.py \
+            --state .github/keepalive-budget.json \
+            --pool "$FREE_HOURS_POOL" --services "$KEPT_WARM" \
+            --window-start "$WINDOW_START" --window-end "$WINDOW_END" \
+            --reserve-minutes "$SEGMENT_MINUTES" >> "$GITHUB_OUTPUT"
+          cat "$GITHUB_OUTPUT"
+          git config user.name  "trinetra-keepalive"
+          git config user.email "keepalive@users.noreply.github.com"
+          git add .github/keepalive-budget.json
+          git diff --staged --quiet || {
+            git commit -m "chore(keepalive): reserve segment [skip ci]"
+            git pull --rebase --autostash origin "${{ github.ref_name }}" && git push \
+              || echo "::warning::could not push the reservation"
+          }
+
+      - name: Run the segment
+        id: run
+        if: steps.plan.outputs.engage == 'true'
+        run: |
+          ARGS=""
+          [ "$PING_ENGINE" = "1" ] && ARGS="$ARGS --target engine=$ENGINE_URL/health/ping"
+          [ "$PING_WEB"    = "1" ] && ARGS="$ARGS --target web=$WEB_URL/api/health"
+          [ "$PING_V1"     = "1" ] && ARGS="$ARGS --target v1=$V1_URL/"
+          WARM=""
+          [ "$PING_ENGINE" = "1" ] && WARM="--warm-url $ENGINE_URL/health/warm"
+          python3 scripts/keepalive_run.py \
+            --state .github/keepalive-budget.json \
+            --pool "$FREE_HOURS_POOL" \
+            --services "$KEPT_WARM" \
+            --window-start "$WINDOW_START" --window-end "$WINDOW_END" \
+            --minutes "$SEGMENT_MINUTES" \
+            --tick-seconds "$TICK_SECONDS" \
+            --lead-seconds "$LEAD_SECONDS" \
+            --reservation "${{ steps.reserve.outputs.reservation }}" \
+            $ARGS $WARM \
+            ${{ github.event.inputs.dry_run == 'true' && '--dry-run' || '' }}
+
+      - name: Commit the budget artifact
+        if: always() && steps.plan.outputs.engage == 'true'
+        run: |
+          git config user.name  "trinetra-keepalive"
+          git config user.email "keepalive@users.noreply.github.com"
+          git add .github/keepalive-budget.json
+          git diff --staged --quiet && { echo "budget unchanged"; exit 0; }
+          git commit -m "chore(keepalive): settle segment [skip ci]"
+          # The successor segment has been running for hours by now and may
+          # have pushed first; rebase rather than fail, and never force.
+          for i in 1 2 3; do
+            git pull --rebase --autostash origin "${{ github.ref_name }}" && git push && exit 0
+            echo "push attempt $i failed; retrying"
+            sleep 5
+          done
+          echo "::warning::could not push the budget artifact"
+
+      - name: Raise an issue after three consecutive failures
+        # Silent keep-alive failure on demo morning is the exact scenario this
+        # phase exists to prevent, so a repeated failure is LOUD.
+        if: steps.run.outputs.failures != ''
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const failed = '${{ steps.run.outputs.failures }}'.trim();
+            const title = 'keep-alive: a target is not answering';
+            const { data: open } = await github.rest.issues.listForRepo({
+              owner: context.repo.owner, repo: context.repo.repo,
+              state: 'open', labels: 'keepalive',
+            });
+            const body = [
+              `Failing targets: **${failed}**`,
+              '',
+              `Run: ${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}`,
+              '',
+              'A cold start is a slow 200 and is NOT counted as a failure, so this',
+              'means the target answered with an error, or not at all, three ticks',
+              'in a row.',
+            ].join('\n');
+            if (open.length) {
+              await github.rest.issues.createComment({
+                owner: context.repo.owner, repo: context.repo.repo,
+                issue_number: open[0].number, body,
+              });
+            } else {
+              await github.rest.issues.create({
+                owner: context.repo.owner, repo: context.repo.repo,
+                title, body, labels: ['keepalive'],
+              });
+            }
+
+      - name: Report
+        if: always()
+        run: |
+          {
+            echo "### keep-alive segment"
+            echo ""
+            echo "- engaged: \`${{ steps.plan.outputs.engage }}\` (window opens in ${{ steps.plan.outputs.opens_in_s }}s)"
+            echo "- ticks that pinged: \`${{ steps.run.outputs.ticks }}\`"
+            echo "- last decision: ${{ steps.run.outputs.reason }}"
+            echo "- caches warmed: \`${{ steps.run.outputs.warmed }}\`"
+            echo "- failing targets: \`${{ steps.run.outputs.failures }}\`"
+            echo "- window: ${{ env.WINDOW_START }}:00–${{ env.WINDOW_END }}:00 UTC, "
+            echo "  segment ${{ env.SEGMENT_MINUTES }} min, tick ${{ env.TICK_SECONDS }}s"
+            echo "- pool: ${{ env.FREE_HOURS_POOL }}h shared by ${{ env.KEPT_WARM }} kept-warm services"
+          } >> "$GITHUB_STEP_SUMMARY"

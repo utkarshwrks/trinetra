@@ -1,0 +1,55 @@
+# dependencies
+node_modules/
+
+# next.js
+.next/
+out/
+build/
+next-env.d.ts
+*.tsbuildinfo
+
+# env — real secrets never leave the machine
+.env
+.env.local
+.env*.local
+
+# runtime data
+web/data/users.json
+# TOTP enrolments -- a committed second factor is no second factor
+web/data/totp.json
+
+# python / engine
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+.pytest_cache/
+.ruff_cache/
+engine/models/
+engine/.env
+
+# foundry / anchor
+anchor/out/
+anchor/cache/
+anchor/broadcast/
+
+# docker volumes are named, but keep any local dumps out
+*.dump
+
+# os / editor
+.DS_Store
+npm-debug.log*
+
+# runtime caches -- geo lookups and keep-alive accounting, rebuilt on demand
+engine/.cache/
+.cache/
+
+# scratch
+__shot.mjs
+__*.mjs
+
+# demo launcher logs
+.demo-logs/
+
+# funded anchorer keys — never commit
+.secrets/

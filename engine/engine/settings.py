@@ -1,0 +1,133 @@
+"""Engine configuration.
+
+Every key is optional. The engine must boot with no .env at all -- exactly the
+guarantee TRINETRA v1 gives for GROQ_API_KEY, extended to the whole engine.
+
+A feature whose key is missing degrades honestly and says so through
+`capabilities()`. It never raises at import time, and it never silently
+pretends the feature ran. See docs/ARCHITECTURE.md section 7.
+"""
+
+from __future__ import annotations
+
+from functools import lru_cache
+
+from pydantic_settings import BaseSettings, SettingsConfigDict
+
+
+#: The docker-compose default, so a fresh clone works with no .env at all.
+#: Hoisted to a constant because `database_configured` needs to distinguish
+#: "nobody set DATABASE_URL" from "DATABASE_URL is set and Postgres is down".
+#: Those are different facts with different fixes, and reporting the first as
+#: the second is what made the production /health look like an outage.
+DEFAULT_DATABASE_URL = "postgresql+psycopg://trinetra:trinetra@localhost:5432/trinetra"
+
+
+class Settings(BaseSettings):
+    model_config = SettingsConfigDict(
+        env_file=".env",
+        env_file_encoding="utf-8",
+        extra="ignore",
+        case_sensitive=False,
+    )
+
+    # ---- identity -------------------------------------------------------
+    app_name: str = "trinetra-engine"
+    version: str = "2.0.0"
+    environment: str = "development"
+    log_level: str = "INFO"
+
+    # ---- datastores -----------------------------------------------------
+    # Defaults match docker-compose.yml so a fresh clone works with no .env.
+    database_url: str = DEFAULT_DATABASE_URL
+    neo4j_uri: str = "bolt://localhost:7687"
+    neo4j_user: str = "neo4j"
+    neo4j_password: str = "trinetra123"
+
+    # ---- optional third-party keys --------------------------------------
+    # All genuinely optional. Absence degrades a feature; it never breaks boot.
+    groq_api_key: str | None = None
+    groq_model: str = "openai/gpt-oss-120b"
+    etherscan_api_key: str | None = None
+    shodan_api_key: str | None = None
+
+    # ---- chain (Phase 8) -------------------------------------------------
+    # Polygon Amoy by default: free faucet, survives past the hackathon, and the
+    # single backend anchorer wallet makes every seal zero-gas for the user.
+    # Swap to Sepolia or a funded mainnet with a .env change; the provider reads
+    # the chain id from the node it connects to, so the badge is always honest.
+    rpc_url: str = "https://rpc-amoy.polygon.technology"
+    chain_id: int = 80002  # Polygon Amoy
+    contract_addr: str | None = None
+    anchorer_key: str | None = None
+
+    # ---- web origin for CORS --------------------------------------------
+    cors_origins: str = "http://localhost:3000"
+
+    @property
+    def database_configured(self) -> bool:
+        """Was a Postgres actually provisioned for this deployment?
+
+        False means the default localhost URL is still in place, i.e. nobody
+        pointed the engine at a database. On the Render free plan that is the
+        normal state: no Postgres is attached, and only /sources reads one.
+        Distinguishing this from a real outage matters, because a raw
+        OperationalError on /health reads as a broken service to anyone who
+        opens it -- and the engine is not broken, it is running the deployment
+        it was given.
+        """
+        return self.database_url != DEFAULT_DATABASE_URL
+
+    @property
+    def cors_origin_list(self) -> list[str]:
+        return [o.strip() for o in self.cors_origins.split(",") if o.strip()]
+
+    @property
+    def is_production(self) -> bool:
+        return self.environment.lower() in {"production", "prod"}
+
+    def capabilities(self) -> dict[str, dict[str, object]]:
+        """What this engine can actually do right now, and why not if it cannot.
+
+        The workbench renders this directly. Every 'enabled: false' must carry a
+        reason a human can act on -- an honest badge, never a silent no-op.
+        """
+        return {
+            "llm_extraction": {
+                "enabled": bool(self.groq_api_key),
+                "detail": f"Groq {self.groq_model}"
+                if self.groq_api_key
+                else "GROQ_API_KEY not set - local regex extractor only",
+            },
+            "chain_eth": {
+                "enabled": bool(self.etherscan_api_key),
+                "detail": "Etherscan free tier"
+                if self.etherscan_api_key
+                else "ETHERSCAN_API_KEY not set - ETH history unavailable",
+            },
+            "infra_shodan": {
+                "enabled": bool(self.shodan_api_key),
+                "detail": "Shodan free tier"
+                if self.shodan_api_key
+                else "SHODAN_API_KEY not set - infra pivots run cache-only via crt.sh",
+            },
+            "database": {
+                "enabled": self.database_configured,
+                "detail": "Postgres configured"
+                if self.database_configured
+                else "DATABASE_URL not set - no Postgres for this deployment. "
+                     "Only /sources reads one; attribution, audit, sealing, "
+                     "graph and Tor are unaffected.",
+            },
+            "anchoring": {
+                "enabled": bool(self.contract_addr and self.anchorer_key),
+                "detail": f"chain {self.chain_id}"
+                if (self.contract_addr and self.anchorer_key)
+                else "CONTRACT_ADDR / ANCHORER_KEY not set - sealing disabled",
+            },
+        }
+
+
+@lru_cache
+def get_settings() -> Settings:
+    return Settings()

@@ -1,0 +1,30 @@
+{
+  "name": "trinetra",
+  "version": "2.0.0",
+  "private": true,
+  "description": "TRINETRA - Dark-web threat-actor attribution and geofencing control room. MP Police Cyber Cell, Jabalpur.",
+  "workspaces": [
+    "web"
+  ],
+  "scripts": {
+    "dev": "npm run dev --workspace web",
+    "build": "npm run build --workspace web",
+    "start": "npm run start --workspace web",
+    "lint": "npm run lint --workspace web",
+    "test": "npm run test --workspace web",
+    "test:watch": "npm run test:watch --workspace web",
+    "engine": "cd engine && uv run uvicorn engine.main:app --reload --port 8000",
+    "engine:test": "cd engine && uv run pytest -q",
+    "db:up": "docker compose up -d",
+    "db:down": "docker compose down",
+    "db:reset": "docker compose down -v && docker compose up -d",
+    "migrate": "cd engine && uv run alembic upgrade head",
+    "demo": "bash scripts/demo.sh",
+    "e2e": "node web/e2e/journey.mjs",
+    "warmup": "bash scripts/warmup.sh",
+    "test:all": "npm test && (cd engine && uv run pytest -q) && (cd anchor && forge test)"
+  },
+  "devDependencies": {
+    "happy-dom": "^20.12.0"
+  }
+}

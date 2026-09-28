@@ -1,0 +1,299 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* ==========================================================================
+   TRINETRA — generative design system
+
+   The app reskins itself every load. All colour, shape and display-type lives
+   in tokens; a skin (html[data-skin]) is a coherent override of them. Six skins,
+   each hand-tuned, so a random draw is always a good one. Components below read
+   only tokens, so they reskin for free.
+   ========================================================================== */
+
+:root {
+  /* structure — overridden per skin */
+  --bg:        #0B0B0E;
+  --bg-2:      #08080B;
+  --surface:   #131318;
+  --surface-2: #1A1A21;
+  --elevated:  #202029;
+  --border:    #24242C;
+  --border-2:  #34343F;
+
+  --text:      #EDEDF0;
+  --muted:     #9A9AA6;
+  --muted-2:   #8E8E98;
+
+  --accent:    #E8503A;
+  --accent-2:  #D9A441;
+  --accent-dim:#8E3324;
+
+  /* confidence ramp — a degree, not a verdict */
+  --c-high:    var(--accent);
+  --c-mid:     var(--accent-2);
+  --c-low:     #5B6B7F;
+
+  --ok:        #4FA97E;
+  --warn:      #D9A441;
+  --danger:    #E8503A;
+
+  --radius: 4px;
+  --radius-lg: 8px;
+  --halo: color-mix(in srgb, var(--accent) 12%, transparent);
+  --grid: color-mix(in srgb, var(--text) 3%, transparent);
+  --font-disp: var(--font-display);
+  --font-code: var(--font-mono);
+
+  /* ---- SEMANTIC COLOUR — DEC-055 -------------------------------------------
+     These carry MEANING, not atmosphere. Signal-root colour on the evidence
+     trail; entity-type colour in the relationship graph. They are declared here
+     in :root and NOWHERE ELSE — no `html[data-skin]` block may redefine one.
+
+     Before DEC-055 every signal root was drawn with
+     `linear-gradient(var(--accent-dim), var(--accent))`: all six roots shared
+     one colour, and that colour changed with the skin. An analyst comparing two
+     actors watched the semantics move under them.
+
+     Mirrored from `lib/signals.ts`, which is the single source of truth (the
+     3D graph needs the same values as three.js integers). `signals.test.ts`
+     asserts the two agree and that no skin overrides them.
+     ------------------------------------------------------------------------ */
+  --sig-identity:   #e8503a;
+  --sig-infra:      #9b7fd8;
+  --sig-financial:  #d9a441;
+  --sig-temporal:   #5b9bd5;
+  --sig-linguistic: #4fa97e;
+  --sig-social:     #c98bb0;
+
+  --ent-actor:   #e8503a;
+  --ent-persona: #e9e9ee;
+  --ent-pgp:     #e8503a;
+  --ent-wallet:  #d9a441;
+  --ent-email:   #5b9bd5;
+  --ent-onion:   #7fb77e;
+  --ent-infra:   #9b7fd8;
+}
+
+/* ---- skins -------------------------------------------------------------
+
+   NOTE on --muted-2 (Phase 8 accessibility pass).
+
+   Every skin's --muted-2 failed WCAG AA against its own --surface: measured at
+   2.83:1 (ember) to 3.53:1 (solar), against a 4.5:1 requirement. axe-core
+   reported it as a SERIOUS violation on fourteen of seventeen routes, and it
+   predates this upgrade -- it is in the original palette.
+
+   Each value below is the lightest colour that reaches 4.5:1 against the
+   LIGHTEST background that skin draws it on -- `--elevated`, not `--surface`.
+   Solving against --surface alone left it failing on panels and cards, which
+   the second axe run caught. Computed rather than eyeballed, so the tokens stay
+   as close to the intended mood as the requirement allows. --muted-2 is a
+   DECORATIVE token: DEC-055 permits a skin to redefine it, and no semantic
+   --sig-* or --ent-* token is touched.
+   ------------------------------------------------------------------------ */
+
+html[data-skin="ember"] {
+  --bg:#0B0B0E; --bg-2:#070709; --surface:#131318; --surface-2:#1A1A21; --elevated:#232330;
+  --border:#24242C; --border-2:#38323A; --text:#F1ECEA; --muted:#9C948F; --muted-2:#918985;
+  --accent:#F05A3E; --accent-2:#E7A548; --accent-dim:#8E3324; --c-low:#6B5F63;
+  --radius:3px; --radius-lg:6px; --font-disp:var(--font-display);
+}
+html[data-skin="abyss"] {
+  --bg:#070B14; --bg-2:#04070E; --surface:#0D1524; --surface-2:#121C31; --elevated:#182642;
+  --border:#1A2740; --border-2:#274069; --text:#E6EDF8; --muted:#8C9BB8; --muted-2:#818EA4;
+  --accent:#3FBEF8; --accent-2:#818CF8; --accent-dim:#255f86; --c-low:#4E6180;
+  --radius:6px; --radius-lg:12px; --font-disp:var(--font-display-c);
+}
+html[data-skin="verdant"] {
+  --bg:#07110D; --bg-2:#040A07; --surface:#0D1A14; --surface-2:#12241B; --elevated:#173626;
+  --border:#173224; --border-2:#245039; --text:#E7F3EC; --muted:#8DB39D; --muted-2:#839E8E;
+  --accent:#37D399; --accent-2:#A3E635; --accent-dim:#1e7b59; --c-low:#4E7A66;
+  --radius:5px; --radius-lg:10px; --font-disp:var(--font-display-b);
+}
+html[data-skin="plasma"] {
+  --bg:#0B0710; --bg-2:#07040B; --surface:#150E1E; --surface-2:#1E1429; --elevated:#2C1E3B;
+  --border:#241a32; --border-2:#3f2b57; --text:#F0EAF6; --muted:#AB9BC0; --muted-2:#9684AA;
+  --accent:#C084FC; --accent-2:#F472B6; --accent-dim:#7c3aad; --c-low:#6E5C82;
+  --radius:8px; --radius-lg:16px; --font-disp:var(--font-display-c);
+}
+html[data-skin="solar"] {
+  --bg:#0E0A06; --bg-2:#090603; --surface:#17110A; --surface-2:#221810; --elevated:#33260f;
+  --border:#2a2013; --border-2:#4d3a1f; --text:#F5ECE0; --muted:#B3A48F; --muted-2:#9B8C7A;
+  --accent:#FB923C; --accent-2:#FBBF24; --accent-dim:#a85a1a; --c-low:#7A6A55;
+  --radius:2px; --radius-lg:4px; --font-disp:var(--font-display);
+}
+html[data-skin="arctic"] {
+  --bg:#080C10; --bg-2:#04070A; --surface:#101820; --surface-2:#16222D; --elevated:#1e2f3d;
+  --border:#1a2731; --border-2:#294050; --text:#E8F0F5; --muted:#93A7B5; --muted-2:#8197A7;
+  --accent:#22D3EE; --accent-2:#60A5FA; --accent-dim:#177f8f; --c-low:#4E6980;
+  --radius:5px; --radius-lg:10px; --font-disp:var(--font-display-b);
+}
+
+/* ---- type pairs — drawn independently of the skin (DEC-055) --------------
+   The font pair used to be pinned by the skin, so type could only change when
+   the palette did. It is now its own draw, held in the same session record, and
+   these blocks come AFTER the skin blocks so they win at equal specificity.
+   A document with no data-font (JS disabled) keeps the skin's choice.
+   ------------------------------------------------------------------------- */
+html[data-font="0"] { --font-disp: var(--font-display);   --font-code: var(--font-mono); }
+html[data-font="1"] { --font-disp: var(--font-display-b); --font-code: var(--font-mono-b); }
+html[data-font="2"] { --font-disp: var(--font-display-c); --font-code: var(--font-mono); }
+
+* { border-color: var(--border); }
+
+html, body {
+  background: var(--bg);
+  color: var(--text);
+  -webkit-font-smoothing: antialiased;
+}
+body {
+  font-feature-settings: "cv02", "cv03", "cv04", "cv11";
+  position: relative;
+}
+
+/* Per-skin atmosphere: a soft accent halo + a faint grid, painted behind all
+   content. Gives each skin a signature ground without touching any component. */
+body::before {
+  content: "";
+  position: fixed; inset: 0; z-index: -2;
+  background:
+    radial-gradient(120% 90% at 82% -10%, var(--halo), transparent 60%),
+    radial-gradient(90% 70% at 0% 110%, color-mix(in srgb, var(--accent-2) 8%, transparent), transparent 55%),
+    var(--bg);
+}
+body::after {
+  content: "";
+  position: fixed; inset: 0; z-index: -1; pointer-events: none;
+  background-image:
+    linear-gradient(var(--grid) 1px, transparent 1px),
+    linear-gradient(90deg, var(--grid) 1px, transparent 1px);
+  background-size: 44px 44px;
+  mask-image: radial-gradient(120% 100% at 50% 0%, black, transparent 75%);
+  opacity: 0.5;
+}
+
+.mono { font-family: var(--font-code), ui-monospace, SFMono-Regular, Menlo, monospace; }
+.display { font-family: var(--font-disp), var(--font-sans), system-ui, sans-serif; }
+
+/* ---- surfaces ---------------------------------------------------------- */
+
+.panel {
+  background: color-mix(in srgb, var(--surface) 82%, transparent);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  backdrop-filter: blur(6px);
+}
+.panel-2 { background: var(--surface-2); border-radius: var(--radius); }
+.hairline { border-bottom: 1px solid var(--border); }
+/* Vertical counterpart, for the workspace navigator rail (DEC-056). */
+.hairline-r { border-right: 1px solid var(--border); }
+/* Top counterpart, for the slim workspace footer (DEC-063). */
+.hairline-t { border-top: 1px solid var(--border); }
+
+.glass {
+  background: color-mix(in srgb, var(--surface) 70%, transparent);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  backdrop-filter: blur(10px) saturate(1.1);
+}
+
+/* One accent mark, not four brackets. */
+.marked { position: relative; }
+.marked::before {
+  content: "";
+  position: absolute; left: 0; top: 12px; bottom: 12px;
+  width: 2px; border-radius: 2px;
+  background: linear-gradient(var(--accent), var(--accent-2));
+}
+
+.accent-text { color: var(--accent); }
+.grad-text {
+  background: linear-gradient(100deg, var(--accent), var(--accent-2));
+  -webkit-background-clip: text; background-clip: text; color: transparent;
+}
+
+/* ---- buttons ----------------------------------------------------------- */
+
+.btn {
+  display: inline-flex; align-items: center; gap: 0.5rem;
+  border: 1px solid var(--border-2);
+  border-radius: var(--radius);
+  padding: 0.5rem 0.9rem;
+  font-size: 11px; letter-spacing: 0.14em; text-transform: uppercase;
+  color: var(--muted);
+  transition: all 0.16s ease;
+}
+.btn:hover { color: var(--text); border-color: color-mix(in srgb, var(--accent) 55%, var(--border-2)); }
+.btn-accent {
+  border-color: color-mix(in srgb, var(--accent) 55%, transparent);
+  background: color-mix(in srgb, var(--accent) 14%, transparent);
+  color: var(--c-high);
+}
+.btn-accent:hover { background: color-mix(in srgb, var(--accent) 24%, transparent); color: var(--c-high); }
+
+/* ---- confidence ------------------------------------------------------- */
+
+.conf-high { color: var(--c-high); }
+.conf-mid  { color: var(--c-mid); }
+.conf-low  { color: var(--c-low); }
+
+.bar { height: 5px; background: color-mix(in srgb, var(--text) 8%, transparent); border-radius: 3px; overflow: hidden; }
+.bar > span { display: block; height: 100%; border-radius: 3px; }
+
+/* ---- chips ------------------------------------------------------------- */
+
+.chip {
+  display: inline-flex; align-items: center; gap: 0.25rem;
+  border: 1px solid var(--border-2);
+  background: color-mix(in srgb, var(--surface-2) 80%, transparent);
+  padding: 0.12rem 0.45rem;
+  border-radius: 999px;
+  font-size: 10px; line-height: 1.4; color: var(--muted);
+}
+.chip-accent {
+  border-color: color-mix(in srgb, var(--accent) 45%, transparent);
+  background: color-mix(in srgb, var(--accent) 12%, transparent);
+  color: var(--c-high);
+}
+
+/* ---- scrollbars -------------------------------------------------------- */
+
+.slim::-webkit-scrollbar { width: 8px; height: 8px; }
+.slim::-webkit-scrollbar-track { background: transparent; }
+.slim::-webkit-scrollbar-thumb { background: var(--border-2); border-radius: 4px; }
+.slim::-webkit-scrollbar-thumb:hover { background: var(--muted-2); }
+.slim { scrollbar-width: thin; scrollbar-color: var(--border-2) transparent; }
+
+/* ---- focus / a11y ------------------------------------------------------ */
+
+:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.sr-only {
+  position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px;
+  overflow: hidden; clip: rect(0,0,0,0); white-space: nowrap; border: 0;
+}
+
+.tnum { font-variant-numeric: tabular-nums; }
+
+/* ---- motion ------------------------------------------------------------ */
+
+@keyframes rise { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: none; } }
+.rise { animation: rise 0.5s cubic-bezier(0.22,1,0.36,1) both; }
+@keyframes shimmer { 0% { background-position: -200% 0; } 100% { background-position: 200% 0; } }
+.shimmer {
+  background: linear-gradient(90deg, transparent, color-mix(in srgb, var(--accent) 18%, transparent), transparent);
+  background-size: 200% 100%; animation: shimmer 1.4s linear infinite;
+}
+@keyframes pulse-ring { 0% { box-shadow: 0 0 0 0 color-mix(in srgb, var(--accent) 40%, transparent); } 70%,100% { box-shadow: 0 0 0 10px transparent; } }
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.001ms !important; animation-iteration-count: 1 !important;
+    transition-duration: 0.001ms !important; scroll-behavior: auto !important;
+  }
+}
+@media (pointer: coarse) {
+  button, a[href], [role="radio"], [role="tab"], [role="button"], label:has(input) {
+    min-height: 44px; min-width: 44px;
+  }
+}
