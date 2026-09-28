@@ -3,7 +3,6 @@
 Generated 2026-09-07 09:05:39 UTC.
 
 **Contract** [`0x861837efbC1E47B64a55B1eAF1D01614eEB98f81`](https://sepolia.etherscan.io/address/0x861837efbC1E47B64a55B1eAF1D01614eEB98f81)  
-**Source** verified — [read it on Etherscan](https://sepolia.etherscan.io/address/0x861837efbC1E47B64a55B1eAF1D01614eEB98f81#code) · [Sourcify](https://repo.sourcify.dev/11155111/0x861837efbC1E47B64a55B1eAF1D01614eEB98f81) — both report an *exact match* against `anchor/src/TrinetraAnchor.sol`, compiler v0.8.36  
 **Chain** SEPOLIA (chain id 11155111)  
 **Sealed** 10/10 · **independently confirmed on-chain** 10/10 · **total gas** 952,296
 
